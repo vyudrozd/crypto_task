@@ -45,6 +45,8 @@ pub(crate) struct SchemaImpl<T: Access> {
 pub struct Schema<T: Access> {
     /// Map of wallet keys to information about the corresponding account.
     pub wallets: RawProofMapIndex<T::Base, Address, Wallet>,
+    /// Map of approval transactions hash to infromation about the corresponding approval transaction
+    pub approval_transactions: RawProofMapIndex<T::Base, Hash, TxSendApprove>
 }
 
 impl<T: Access> SchemaImpl<T> {
@@ -93,19 +95,8 @@ where
         self.public.wallets.put(&key, wallet);
     }
 
-    /// Append new unapproved transaction record to db.
-    /// 'wallet' - wallet of sender
-    pub fn create_approve_transaction(&mut self, wallet: Wallet, amount: u64, to: Address, approver: Address, tx_hash: Hash) {
-        // Update freezed balance & save the history
-        self.increase_wallet_freezed_balance(wallet, amount, tx_hash);
-
-        // Save transaction in schema.approval_transactions
-        let transaction = TxSendApprove::new(to, amount, approver);
-        self.public.approval_transactions.put(&tx_hash, transaction);
-    }
-
     /// Increases freezed balance of the wallet and append new record to its history.
-    pub fn increase_wallet_freezed_balance(&mut self, wallet: Wallet, amount: u64, transaction: Hash) {
+    pub fn change_wallet_balance_freezed(&mut self, wallet: Wallet, amount: u64, transaction: Hash) {
         let mut history = self.wallet_history.get(&wallet.owner);
         history.push(transaction);
 
@@ -115,5 +106,16 @@ where
 
         let wallet_key = wallet.owner;
         self.public.wallets.put(&wallet_key, wallet);
+    }
+
+    /// Append new unapproved transaction record to db.
+    /// 'wallet' - wallet of sender
+    pub fn create_approve_transaction(&mut self, wallet: Wallet, amount: u64, to: Address, approver: Address, tx_hash: Hash) {
+        // Update freezed balance & save the history
+        self.change_wallet_balance_freezed(wallet, amount, tx_hash);
+
+        // Save transaction in schema.approval_transactions
+        let transaction = TxSendApprove::new(to, amount, approver);
+        self.public.approval_transactions.put(&tx_hash, transaction);
     }
 }

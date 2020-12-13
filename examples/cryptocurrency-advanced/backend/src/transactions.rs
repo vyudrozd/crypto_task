@@ -224,7 +224,7 @@ impl CryptocurrencyInterface<ExecutionContext<'_>> for CryptocurrencyService {
         let _approver_wallet = schema.wallet(arg.approver).ok_or(Error::ApproverNotFound)?;
 
         // Check balance
-        if sender_wallet.balance - sender_wallet.freezed_balance < amount {
+        if sender_wallet.balance - sender_wallet.balance_freezed < amount {
             Err(Error::InsufficientCurrencyAmount.into())
         } else {
             schema.create_approve_transaction(sender_wallet, amount, to, arg.approver, tx_hash);
