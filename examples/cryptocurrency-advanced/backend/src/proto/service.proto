@@ -37,7 +37,7 @@ message TxSendApprove {
   // Auxiliary number to guarantee non-idempotence of transactions
   uint64 seed = 3;
   // Address of approver
-  exonum.crypto.Hash approverAddress = 4;
+  exonum.crypto.Hash approver = 4;
 }
 
 // Issue `amount` of the currency to the `wallet`.
