@@ -25,6 +25,7 @@ use exonum::{
 use exonum_derive::{FromAccess, RequireArtifact};
 
 use crate::{wallet::Wallet, INITIAL_BALANCE};
+use crate::{transactions::TxSendApprove};
 
 /// Database schema for the cryptocurrency.
 ///
@@ -88,7 +89,31 @@ where
         let mut history = self.wallet_history.get(&key);
         history.push(transaction);
         let history_hash = history.object_hash();
-        let wallet = Wallet::new(key, name, INITIAL_BALANCE, history.len(), &history_hash);
+        let wallet = Wallet::new(key, name, INITIAL_BALANCE, 0,history.len(), &history_hash);
         self.public.wallets.put(&key, wallet);
+    }
+
+    /// Append new unapproved transaction record to db.
+    /// 'wallet' - wallet of sender
+    pub fn create_approve_transaction(&mut self, wallet: Wallet, amount: u64, to: Address, approver: Address, tx_hash: Hash) {
+        // Update freezed balance & save the history
+        self.increase_wallet_freezed_balance(wallet, amount, tx_hash);
+
+        // Save transaction in schema.approval_transactions
+        let transaction = TxSendApprove::new(to, amount, approver);
+        self.public.approval_transactions.put(&tx_hash, transaction);
+    }
+
+    /// Increases freezed balance of the wallet and append new record to its history.
+    pub fn increase_wallet_freezed_balance(&mut self, wallet: Wallet, amount: u64, transaction: Hash) {
+        let mut history = self.wallet_history.get(&wallet.owner);
+        history.push(transaction);
+
+        let history_hash_increase = history.object_hash();
+        let balance_freezed = wallet.balance_freezed;
+        let wallet = wallet.set_balance_freezed(balance_freezed + amount, &history_hash_increase);
+
+        let wallet_key = wallet.owner;
+        self.public.wallets.put(&wallet_key, wallet);
     }
 }

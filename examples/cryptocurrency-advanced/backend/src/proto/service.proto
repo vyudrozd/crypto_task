@@ -28,6 +28,18 @@ message Transfer {
   uint64 seed = 3;
 }
 
+// Transfer amount with approval
+message TxSendApprove {
+  // Address of receiver's wallet.
+  exonum.crypto.Hash to = 1;
+  // Amount of currency for transaction
+  uint64 amount = 2;
+  // Auxiliary number to guarantee non-idempotence of transactions
+  uint64 seed = 3;
+  // Address of approver
+  exonum.crypto.Hash approverAddress = 4;
+}
+
 // Issue `amount` of the currency to the `wallet`.
 message Issue {
   // Issued amount of currency.
@@ -50,10 +62,12 @@ message Wallet {
   string name = 2;
   // Current balance of the wallet.
   uint64 balance = 3;
+  // Freezed currently
+  uint64 balance_freezed = 4;
   // Length of the transactions history.
-  uint64 history_len = 4;
+  uint64 history_len = 5;
   // `Hash` of the transactions history.
-  exonum.crypto.Hash history_hash = 5;
+  exonum.crypto.Hash history_hash = 6;
 }
 
 // Cryptocurrency configuration.

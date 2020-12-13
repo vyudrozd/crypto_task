@@ -23,6 +23,8 @@ use exonum_proto::ProtobufConvert;
 
 use crate::{proto, schema::SchemaImpl, CryptocurrencyService};
 
+use rand::Rng;
+
 /// Error codes emitted by wallet transactions during execution.
 #[derive(Debug, ExecutionFail)]
 pub enum Error {
@@ -38,14 +40,18 @@ pub enum Error {
     ///
     /// Can be emitted by `Transfer` or `Issue`.
     ReceiverNotFound = 2,
+    /// Approver not found
+    ///
+    /// Can be emitted by TxSendApprove
+    ApproverNotFound = 3,
     /// Insufficient currency amount.
     ///
     /// Can be emitted by `Transfer`.
-    InsufficientCurrencyAmount = 3,
+    InsufficientCurrencyAmount = 4,
     /// Sender are same as receiver.
     ///
     /// Can be emitted by 'Transfer`.
-    SenderSameAsReceiver = 4,
+    SenderSameAsReceiver = 5,
 }
 
 /// Transfer `amount` of the currency from one wallet to another.
@@ -75,6 +81,41 @@ pub struct Issue {
     ///
     /// [idempotence]: https://en.wikipedia.org/wiki/Idempotence
     pub seed: u64,
+}
+
+/// Information about transaction with approval stored in the database.
+#[derive(Clone, Debug)]
+#[derive(ProtobufConvert, BinaryValue, ObjectHash)]
+#[protobuf_convert(source = "proto::service::TxSendApprove", serde_pb_convert)]
+pub struct TxSendApprove {
+    /// Address of receiver's wallet.
+    pub to: Address,
+    /// Address of approver person
+    pub approver: Address,
+    /// Amount of currency to transfer.
+    pub amount: u64,
+    /// Auxiliary number to guarantee [non-idempotence][idempotence] of transactions.
+    ///
+    /// [idempotence]: https://en.wikipedia.org/wiki/Idempotence
+    pub seed: u64,
+}
+
+impl TxSendApprove {
+    /// Creates a new approval transaction.
+    pub fn new(
+        to: Address,
+        amount: u64,
+        approver: Address
+    ) -> Self {
+        let mut rng = rand::thread_rng();
+
+        Self {
+            to,
+            amount,
+            seed: rng.gen::<u64>(),
+            approver
+        }
+    }
 }
 
 /// Create wallet with the given `name`.
@@ -109,6 +150,9 @@ pub trait CryptocurrencyInterface<Ctx> {
     /// Creates wallet with the given `name`.
     #[interface_method(id = 2)]
     fn create_wallet(&self, ctx: Ctx, arg: CreateWallet) -> Self::Output;
+    /// Transfer `amount` of the currency from one wallet to another with approval from third person.
+    #[interface_method(id = 3)]
+    fn tx_send_approve(&self, ctx: Ctx, arg: TxSendApprove) -> Self::Output;
 }
 
 impl CryptocurrencyInterface<ExecutionContext<'_>> for CryptocurrencyService {
@@ -126,7 +170,7 @@ impl CryptocurrencyInterface<ExecutionContext<'_>> for CryptocurrencyService {
 
         let sender = schema.wallet(from).ok_or(Error::SenderNotFound)?;
         let receiver = schema.wallet(arg.to).ok_or(Error::ReceiverNotFound)?;
-        if sender.balance < amount {
+        if sender.balance - sender.balance_freezed < amount {
             Err(Error::InsufficientCurrencyAmount.into())
         } else {
             schema.decrease_wallet_balance(sender, amount, tx_hash);
@@ -158,6 +202,33 @@ impl CryptocurrencyInterface<ExecutionContext<'_>> for CryptocurrencyService {
             Ok(())
         } else {
             Err(Error::WalletAlreadyExists.into())
+        }
+    }
+
+    fn tx_send_approve(&self, context: ExecutionContext<'_>, arg: TxSendApprove) -> Self::Output {
+        // Getting schema
+        let (from, tx_hash) = extract_info(&context)?;
+        let mut schema = SchemaImpl::new(context.service_data());
+
+        let to = arg.to;
+        let amount = arg.amount;
+        if from == to {
+            return Err(Error::SenderSameAsReceiver.into());
+        }
+
+        // Check sender's waller exists
+        let sender_wallet = schema.wallet(from).ok_or(Error::SenderNotFound)?;
+        // Check receiver's waller exists
+        let _receiver_wallet = schema.wallet(to).ok_or(Error::ReceiverNotFound)?;
+        // Check approver's wallet exists
+        let _approver_wallet = schema.wallet(arg.approver).ok_or(Error::ApproverNotFound)?;
+
+        // Check balance
+        if sender_wallet.balance - sender_wallet.freezed_balance < amount {
+            Err(Error::InsufficientCurrencyAmount.into())
+        } else {
+            schema.create_approve_transaction(sender_wallet, amount, to, arg.approver, tx_hash);
+            Ok(())
         }
     }
 }
